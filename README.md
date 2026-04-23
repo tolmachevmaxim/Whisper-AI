@@ -115,6 +115,7 @@ This installs:
 They appear in Finder's right-click menu under `Quick Actions` / `Services` for audio and video files. If macOS does not refresh immediately, relaunch Finder.
 
 The person split action runs locally through `skill/scripts/transcribe.py --persons`.
+By default it saves only one file: `*_speakers_model-...txt`.
 
 ## Russian language models
 
@@ -135,9 +136,10 @@ Saved only when timestamps are enabled:
 - Word timestamps: `*_words_model-...txt` (if available)
 - Full raw result JSON: `*_full_result_model-...json`
 
-If speaker/person split is enabled:
-- Speaker monologues: `*_speakers_model-...txt`
-- Speaker labels are also included in timestamp/word files when available.
+If speaker/person split is enabled through the Finder Quick Action or `--persons`:
+- Speaker monologues only: `*_speakers_model-...txt`
+
+For debug artifacts, run `--persons --all-outputs` to also save plain transcript, timestamp, word, and JSON files.
 
 ## Environment variables
 

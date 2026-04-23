@@ -152,7 +152,29 @@ def to_plain_dict(obj):
     return json.loads(str(obj))
 
 
-def save_transcription_outputs(file_path, model_name, result, audio_duration, elapsed_time, source_label, include_timestamps):
+def save_speaker_monologues(file_path, model_tag, result):
+    base_path, _ = os.path.splitext(file_path)
+    speakers_path = f"{base_path}_speakers_model-{model_tag}.txt"
+    with open(speakers_path, "w", encoding="utf-8") as speakers_file:
+        for monologue in build_speaker_monologues(result):
+            start = format_timestamp(monologue.get("start", 0))
+            end = format_timestamp(monologue.get("end", 0))
+            speaker = monologue.get("speaker") or "UNKNOWN"
+            text = (monologue.get("text") or "").strip()
+            speakers_file.write(f"{speaker} [{start} --> {end}]\n{text}\n\n")
+    return speakers_path
+
+
+def save_transcription_outputs(
+    file_path,
+    model_name,
+    result,
+    audio_duration,
+    elapsed_time,
+    source_label,
+    include_timestamps,
+    output_mode="full",
+):
     transcription_text = (result.get("text") or "").strip()
     symbol_count = len(transcription_text)
     audio_duration_formatted = format_hhmmss(audio_duration)
@@ -161,12 +183,14 @@ def save_transcription_outputs(file_path, model_name, result, audio_duration, el
     model_tag = sanitize_filename_part(model_name)
     base_path, _ = os.path.splitext(file_path)
 
-    summary_path = (
-        f"{base_path}_duration-{audio_duration_formatted}_model-{model_tag}"
-        f"_symbols-{symbol_count}_time-{elapsed_time_formatted}.txt"
-    )
-    with open(summary_path, "w", encoding="utf-8") as txt_file:
-        txt_file.write(transcription_text)
+    summary_path = None
+    if output_mode != "speakers_only":
+        summary_path = (
+            f"{base_path}_duration-{audio_duration_formatted}_model-{model_tag}"
+            f"_symbols-{symbol_count}_time-{elapsed_time_formatted}.txt"
+        )
+        with open(summary_path, "w", encoding="utf-8") as txt_file:
+            txt_file.write(transcription_text)
 
     words_output_exists = False
     speakers_output_exists = False
@@ -207,14 +231,7 @@ def save_transcription_outputs(file_path, model_name, result, audio_duration, el
 
         if any(segment.get("speaker") for segment in result.get("segments", [])):
             speakers_output_exists = True
-            speakers_path = f"{base_path}_speakers_model-{model_tag}.txt"
-            with open(speakers_path, "w", encoding="utf-8") as speakers_file:
-                for monologue in build_speaker_monologues(result):
-                    start = format_timestamp(monologue.get("start", 0))
-                    end = format_timestamp(monologue.get("end", 0))
-                    speaker = monologue.get("speaker") or "UNKNOWN"
-                    text = (monologue.get("text") or "").strip()
-                    speakers_file.write(f"{speaker} [{start} --> {end}]\n{text}\n\n")
+            speakers_path = save_speaker_monologues(file_path, model_tag, result)
 
         json_path = f"{base_path}_full_result_model-{model_tag}.json"
         with open(json_path, "w", encoding="utf-8") as json_file:
@@ -225,7 +242,8 @@ def save_transcription_outputs(file_path, model_name, result, audio_duration, el
     print(f"Audio duration: {audio_duration_formatted} (hh:mm:ss)")
     print(f"Number of symbols: {symbol_count}")
     print(f"Time taken: {elapsed_time_formatted} (hh:mm:ss)")
-    print(f"Transcription saved to: {summary_path}")
+    if summary_path:
+        print(f"Transcription saved to: {summary_path}")
     if include_timestamps:
         print(f"Timestamps saved to: {timestamps_path}")
         if words_output_exists:
@@ -235,6 +253,15 @@ def save_transcription_outputs(file_path, model_name, result, audio_duration, el
         print(f"Full JSON saved to: {json_path}")
     else:
         print("Timestamps are disabled for this run.")
+
+
+def save_speakers_only_output(file_path, model_name, result, audio_duration, elapsed_time, source_label):
+    model_tag = sanitize_filename_part(model_name)
+    speakers_path = save_speaker_monologues(file_path, model_tag, result)
+    print(f"Source: {source_label}")
+    print(f"Audio duration: {format_hhmmss(audio_duration)} (hh:mm:ss)")
+    print(f"Time taken: {format_hhmmss(elapsed_time)} (hh:mm:ss)")
+    print(f"Speaker transcript saved to: {speakers_path}")
 
 
 def maybe_add_local_speaker_labels(file_path, result, include_speakers):
@@ -250,7 +277,15 @@ def maybe_add_local_speaker_labels(file_path, result, include_speakers):
     return add_speaker_labels(result, turns), True
 
 
-def transcribe_audio_local_whisper(file_path, model, model_name, include_timestamps, backend_label, include_speakers=False):
+def transcribe_audio_local_whisper(
+    file_path,
+    model,
+    model_name,
+    include_timestamps,
+    backend_label,
+    include_speakers=False,
+    output_mode="full",
+):
     print(f"Starting local transcription of {os.path.basename(file_path)}.")
     ensure_audio_binaries()
     audio = AudioSegment.from_file(file_path)
@@ -265,19 +300,37 @@ def transcribe_audio_local_whisper(file_path, model, model_name, include_timesta
         file_path, result, include_speakers
     )
     elapsed_time = time.time() - start_time
-    save_transcription_outputs(
-        file_path,
-        model_name,
-        result,
-        audio_duration,
-        elapsed_time,
-        backend_label,
-        include_timestamps or speaker_labels_added,
-    )
+    if output_mode == "speakers_only" and speaker_labels_added:
+        save_speakers_only_output(
+            file_path,
+            model_name,
+            result,
+            audio_duration,
+            elapsed_time,
+            backend_label,
+        )
+    else:
+        save_transcription_outputs(
+            file_path,
+            model_name,
+            result,
+            audio_duration,
+            elapsed_time,
+            backend_label,
+            include_timestamps or speaker_labels_added,
+        )
     print(f"Transcription process completed for {os.path.basename(file_path)}.\n")
 
 
-def transcribe_audio_local_mlx(file_path, mlx_transcribe, mlx_repo, model_name, include_timestamps, include_speakers=False):
+def transcribe_audio_local_mlx(
+    file_path,
+    mlx_transcribe,
+    mlx_repo,
+    model_name,
+    include_timestamps,
+    include_speakers=False,
+    output_mode="full",
+):
     print(f"Starting local transcription of {os.path.basename(file_path)}.")
     ensure_audio_binaries()
     audio = AudioSegment.from_file(file_path)
@@ -325,15 +378,25 @@ def transcribe_audio_local_mlx(file_path, mlx_transcribe, mlx_repo, model_name, 
         file_path, result, include_speakers
     )
     elapsed_time = time.time() - start_time
-    save_transcription_outputs(
-        file_path,
-        model_name,
-        result,
-        audio_duration,
-        elapsed_time,
-        "local-mlx-whisper(metal)",
-        include_timestamps or speaker_labels_added,
-    )
+    if output_mode == "speakers_only" and speaker_labels_added:
+        save_speakers_only_output(
+            file_path,
+            model_name,
+            result,
+            audio_duration,
+            elapsed_time,
+            "local-mlx-whisper(metal)",
+        )
+    else:
+        save_transcription_outputs(
+            file_path,
+            model_name,
+            result,
+            audio_duration,
+            elapsed_time,
+            "local-mlx-whisper(metal)",
+            include_timestamps or speaker_labels_added,
+        )
     print(f"Transcription process completed for {os.path.basename(file_path)}.\n")
 
 
@@ -692,6 +755,7 @@ def create_local_transcribe_function(
     auto_install_mlx=None,
     include_speakers=False,
     auto_install_mlx_audio=None,
+    output_mode="full",
 ):
     if include_speakers:
         ensure_mlx_audio_for_macos(
@@ -715,6 +779,7 @@ def create_local_transcribe_function(
                 model_name,
                 include_timestamps,
                 include_speakers,
+                output_mode,
             )
 
     if not has_module("whisper"):
@@ -744,6 +809,7 @@ def create_local_transcribe_function(
         include_timestamps,
         backend_label,
         include_speakers,
+        output_mode,
     )
 
 
