@@ -60,7 +60,7 @@ write_workflow() {
   local extra_args="$3"
   local escaped_python="${PYTHON_BIN//&/&amp;}"
   local escaped_script="${TRANSCRIBE_SCRIPT//&/&amp;}"
-  local command="'$escaped_python' '$escaped_script' $extra_args \$ARGS"
+  local command="'$escaped_python' '$escaped_script' $extra_args "'$ARGS'
 
   cat > "$workflow_dir/Contents/document.wflow" <<WFLOW
 <?xml version="1.0" encoding="UTF-8"?>
@@ -111,11 +111,18 @@ write_workflow() {
         <key>ActionParameters</key>
         <dict>
           <key>COMMAND_STRING</key>
-          <string>ARGS=""
+          <string>escape_applescript_string() {
+  local s="\$1"
+  s="\${s//\\\\/\\\\\\\\}"
+  s="\${s//\\"/\\\\\\"}"
+  printf '%s' "\$s"
+}
+
+ARGS=""
 for f in "\$@"; do
   if [ -f "\$f" ]; then
-    escaped=\$(printf "%q" "\$f")
-    ARGS="\$ARGS \$escaped"
+    escaped=\$(printf '%s' "\$f" | sed "s/'/'\\\\\\\\''/g")
+    ARGS="\$ARGS '\$escaped'"
   fi
 done
 
@@ -124,10 +131,13 @@ if [ -z "\$ARGS" ]; then
   exit 0
 fi
 
+TERMINAL_COMMAND="clear; echo '$title'; echo ''; $command; echo ''; echo 'Done. Press any key to close.'; read -k1; exit"
+TERMINAL_COMMAND=\$(escape_applescript_string "\$TERMINAL_COMMAND")
+
 osascript &lt;&lt;APPLESCRIPT
 tell application "Terminal"
   activate
-  set theTab to do script "clear; echo '$title'; echo ''; $command; echo ''; echo 'Done. Press any key to close.'; read -k1; exit"
+  set theTab to do script "\$TERMINAL_COMMAND"
   set custom title of theTab to "$title"
 end tell
 APPLESCRIPT</string>
