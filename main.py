@@ -24,6 +24,12 @@ from pydub import AudioSegment
 from tkinter import filedialog
 from watchdog.observers.polling import PollingObserver
 
+from diarization import (
+    add_speaker_labels,
+    build_speaker_monologues,
+    run_mlx_diarization,
+)
+
 try:
     import torch
 except ImportError:
@@ -163,8 +169,10 @@ def save_transcription_outputs(file_path, model_name, result, audio_duration, el
         txt_file.write(transcription_text)
 
     words_output_exists = False
+    speakers_output_exists = False
     timestamps_path = None
     words_path = None
+    speakers_path = None
     json_path = None
     if include_timestamps:
         timestamps_path = f"{base_path}_timestamps_model-{model_tag}.txt"
@@ -197,6 +205,17 @@ def save_transcription_outputs(file_path, model_name, result, audio_duration, el
             os.remove(words_path)
             words_path = None
 
+        if any(segment.get("speaker") for segment in result.get("segments", [])):
+            speakers_output_exists = True
+            speakers_path = f"{base_path}_speakers_model-{model_tag}.txt"
+            with open(speakers_path, "w", encoding="utf-8") as speakers_file:
+                for monologue in build_speaker_monologues(result):
+                    start = format_timestamp(monologue.get("start", 0))
+                    end = format_timestamp(monologue.get("end", 0))
+                    speaker = monologue.get("speaker") or "UNKNOWN"
+                    text = (monologue.get("text") or "").strip()
+                    speakers_file.write(f"{speaker} [{start} --> {end}]\n{text}\n\n")
+
         json_path = f"{base_path}_full_result_model-{model_tag}.json"
         with open(json_path, "w", encoding="utf-8") as json_file:
             json.dump(result, json_file, ensure_ascii=False, indent=2)
@@ -211,12 +230,22 @@ def save_transcription_outputs(file_path, model_name, result, audio_duration, el
         print(f"Timestamps saved to: {timestamps_path}")
         if words_output_exists:
             print(f"Word-level timestamps saved to: {words_path}")
+        if speakers_output_exists:
+            print(f"Speaker transcript saved to: {speakers_path}")
         print(f"Full JSON saved to: {json_path}")
     else:
         print("Timestamps are disabled for this run.")
 
 
-def transcribe_audio_local_whisper(file_path, model, model_name, include_timestamps, backend_label):
+def maybe_add_local_speaker_labels(file_path, result, include_speakers):
+    if not include_speakers:
+        return result
+    turns = run_mlx_diarization(file_path)
+    print(f"Speaker diarization detected {len(set(turn.speaker for turn in turns))} speaker(s).")
+    return add_speaker_labels(result, turns)
+
+
+def transcribe_audio_local_whisper(file_path, model, model_name, include_timestamps, backend_label, include_speakers=False):
     print(f"Starting local transcription of {os.path.basename(file_path)}.")
     ensure_audio_binaries()
     audio = AudioSegment.from_file(file_path)
@@ -224,9 +253,10 @@ def transcribe_audio_local_whisper(file_path, model, model_name, include_timesta
     start_time = time.time()
     result = model.transcribe(
         file_path,
-        word_timestamps=include_timestamps,
+        word_timestamps=include_timestamps or include_speakers,
         verbose=False,
     )
+    result = maybe_add_local_speaker_labels(file_path, result, include_speakers)
     elapsed_time = time.time() - start_time
     save_transcription_outputs(
         file_path,
@@ -235,12 +265,12 @@ def transcribe_audio_local_whisper(file_path, model, model_name, include_timesta
         audio_duration,
         elapsed_time,
         backend_label,
-        include_timestamps,
+        include_timestamps or include_speakers,
     )
     print(f"Transcription process completed for {os.path.basename(file_path)}.\n")
 
 
-def transcribe_audio_local_mlx(file_path, mlx_transcribe, mlx_repo, model_name, include_timestamps):
+def transcribe_audio_local_mlx(file_path, mlx_transcribe, mlx_repo, model_name, include_timestamps, include_speakers=False):
     print(f"Starting local transcription of {os.path.basename(file_path)}.")
     ensure_audio_binaries()
     audio = AudioSegment.from_file(file_path)
@@ -253,19 +283,19 @@ def transcribe_audio_local_mlx(file_path, mlx_transcribe, mlx_repo, model_name, 
         lambda: mlx_transcribe(
             file_path,
             path_or_hf_repo=mlx_repo,
-            word_timestamps=include_timestamps,
+            word_timestamps=include_timestamps or include_speakers,
             verbose=False,
         ),
         lambda: mlx_transcribe(
             file_path,
             model=mlx_repo,
-            word_timestamps=include_timestamps,
+            word_timestamps=include_timestamps or include_speakers,
             verbose=False,
         ),
         lambda: mlx_transcribe(
             file_path,
             mlx_repo,
-            word_timestamps=include_timestamps,
+            word_timestamps=include_timestamps or include_speakers,
             verbose=False,
         ),
         lambda: mlx_transcribe(file_path, mlx_repo, verbose=False),
@@ -284,6 +314,7 @@ def transcribe_audio_local_mlx(file_path, mlx_transcribe, mlx_repo, model_name, 
         )
 
     result = to_plain_dict(result)
+    result = maybe_add_local_speaker_labels(file_path, result, include_speakers)
     elapsed_time = time.time() - start_time
     save_transcription_outputs(
         file_path,
@@ -292,7 +323,7 @@ def transcribe_audio_local_mlx(file_path, mlx_transcribe, mlx_repo, model_name, 
         audio_duration,
         elapsed_time,
         "local-mlx-whisper(metal)",
-        include_timestamps,
+        include_timestamps or include_speakers,
     )
     print(f"Transcription process completed for {os.path.basename(file_path)}.\n")
 
@@ -481,6 +512,11 @@ def choose_timestamps_setting():
     return timestamps_choice in {"y", "yes", "1", "true"}
 
 
+def choose_speaker_setting():
+    speaker_choice = input("Transcribe by persons/speakers locally? (y/n): ").strip().lower()
+    return speaker_choice in {"y", "yes", "1", "true"}
+
+
 def has_module(module_name):
     importlib.invalidate_caches()
     return importlib.util.find_spec(module_name) is not None
@@ -537,6 +573,40 @@ def ensure_mlx_whisper_for_macos(interactive_prompt=True, auto_install=None):
 
     print("mlx-whisper install finished but module is still not available. Falling back to openai-whisper.")
     return False
+
+
+def ensure_mlx_audio_for_macos(interactive_prompt=True, auto_install=None):
+    if sys.platform != "darwin":
+        raise RuntimeError(
+            "Local speaker diarization is currently optimized for macOS Apple Silicon via mlx-audio."
+        )
+    if has_module("mlx_audio"):
+        return True
+
+    print("macOS detected: mlx-audio is not installed.")
+    if auto_install is not None:
+        should_install = auto_install
+    elif interactive_prompt:
+        should_install = ask_yes_no(
+            "Install mlx-audio now for local speaker diarization on Mac? (Y/n): ",
+            default_yes=True,
+        )
+    else:
+        should_install = False
+
+    if not should_install:
+        raise RuntimeError(
+            "Local speaker diarization requires mlx-audio. Install it with: pip install -U mlx-audio"
+        )
+
+    if not install_python_package("mlx-audio"):
+        raise RuntimeError("Could not install mlx-audio for local speaker diarization.")
+
+    if has_module("mlx_audio"):
+        print("mlx-audio installed successfully.")
+        return True
+
+    raise RuntimeError("mlx-audio install finished but module is still not available.")
 
 
 def choose_best_device_for_local_whisper():
@@ -611,7 +681,15 @@ def create_local_transcribe_function(
     include_timestamps,
     interactive_prompt=True,
     auto_install_mlx=None,
+    include_speakers=False,
+    auto_install_mlx_audio=None,
 ):
+    if include_speakers:
+        ensure_mlx_audio_for_macos(
+            interactive_prompt=interactive_prompt,
+            auto_install=auto_install_mlx_audio,
+        )
+
     if sys.platform == "darwin":
         if ensure_mlx_whisper_for_macos(
             interactive_prompt=interactive_prompt,
@@ -627,6 +705,7 @@ def create_local_transcribe_function(
                 mlx_repo,
                 model_name,
                 include_timestamps,
+                include_speakers,
             )
 
     if not has_module("whisper"):
@@ -655,6 +734,7 @@ def create_local_transcribe_function(
         model_name,
         include_timestamps,
         backend_label,
+        include_speakers,
     )
 
 
@@ -664,9 +744,18 @@ if __name__ == "__main__":
     include_timestamps = choose_timestamps_setting()
 
     source_choice = choose_source()
+    include_speakers = False
     if source_choice == "1":
+        include_speakers = choose_speaker_setting()
+        if include_speakers and not include_timestamps:
+            print("Speaker split needs timestamps for alignment. Timestamps enabled for this run.")
+            include_timestamps = True
         model_name = choose_local_model()
-        transcribe_function = create_local_transcribe_function(model_name, include_timestamps)
+        transcribe_function = create_local_transcribe_function(
+            model_name,
+            include_timestamps,
+            include_speakers=include_speakers,
+        )
     else:
         model_name = choose_openai_model()
         transcribe_function = lambda file_path: transcribe_audio_openai(file_path, model_name, include_timestamps)

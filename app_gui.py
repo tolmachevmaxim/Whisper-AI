@@ -109,6 +109,7 @@ class TranscriptionApp:
 
         self.source_var = tk.StringVar(value="local")
         self.timestamps_var = tk.BooleanVar(value=True)
+        self.speakers_var = tk.BooleanVar(value=False)
         self.current_file_var = tk.StringVar(value="")
         self.overall_var = tk.StringVar(value="0 / 0")
         self.model_display_var = tk.StringVar()
@@ -116,6 +117,7 @@ class TranscriptionApp:
         self.sidebar_done_var = tk.StringVar(value="0")
         self.sidebar_backend_var = tk.StringVar(value="Local")
         self.sidebar_timestamps_var = tk.StringVar(value="On")
+        self.sidebar_speakers_var = tk.StringVar(value="Off")
         self.drop_hint_var = tk.StringVar(value="Drop audio files or folders here")
 
         self.model_display_to_value: dict[str, str] = {}
@@ -191,6 +193,7 @@ class TranscriptionApp:
         stat(5, "Completed", self.sidebar_done_var)
         stat(6, "Backend", self.sidebar_backend_var)
         stat(7, "Timestamps", self.sidebar_timestamps_var)
+        stat(8, "Persons", self.sidebar_speakers_var)
 
         ctk.CTkLabel(
             sb, text="Tip: use multilingual model\nfor Russian audio.",
@@ -233,6 +236,14 @@ class TranscriptionApp:
             fg_color=ACCENT, border_color=BORDER,
             font=self._f(12),
         ).grid(row=0, column=3, sticky="w")
+
+        ctk.CTkCheckBox(
+            r0, text="Transcribe by persons",
+            variable=self.speakers_var,
+            command=self._refresh_sidebar_stats,
+            fg_color=ACCENT, border_color=BORDER,
+            font=self._f(12),
+        ).grid(row=0, column=4, sticky="w", padx=(18, 0))
 
         # Row 1 — Model ────────────────────────────────────────
         r1 = ctk.CTkFrame(ct, fg_color="transparent")
@@ -524,6 +535,8 @@ class TranscriptionApp:
             "Local" if self.source_var.get() == "local" else "OpenAI API")
         self.sidebar_timestamps_var.set(
             "On" if self.timestamps_var.get() else "Off")
+        self.sidebar_speakers_var.set(
+            "On" if self.speakers_var.get() else "Off")
 
     # ── Log polling ────────────────────────────────────────────
 
@@ -690,6 +703,7 @@ class TranscriptionApp:
             self._update_row_status(p, "Queued")
 
         auto_install_mlx = None
+        auto_install_mlx_audio = None
         if (self.source_var.get() == "local" and _MAC
                 and not core.has_module("mlx_whisper")):
             auto_install_mlx = messagebox.askyesno(
@@ -697,8 +711,17 @@ class TranscriptionApp:
                 "mlx-whisper is not installed.\n\n"
                 "Install now for faster local transcription on Mac?",
             )
+        if (self.source_var.get() == "local" and self.speakers_var.get()
+                and _MAC and not core.has_module("mlx_audio")):
+            auto_install_mlx_audio = messagebox.askyesno(
+                "Install mlx-audio",
+                "Local transcription by persons requires mlx-audio.\n\n"
+                "Install now for local speaker diarization on Mac?\n\n"
+                "Audio stays local; the model is downloaded from Hugging Face.",
+            )
 
-        include_timestamps = bool(self.timestamps_var.get())
+        include_speakers = bool(self.speakers_var.get())
+        include_timestamps = bool(self.timestamps_var.get()) or include_speakers
         source = self.source_var.get()
         files_snapshot = list(self.file_paths)
         self.stop_event.clear()
@@ -710,14 +733,15 @@ class TranscriptionApp:
 
         self.worker_thread = threading.Thread(
             target=self._worker_run,
-            args=(source, model_value, include_timestamps,
-                  files_snapshot, auto_install_mlx),
+            args=(source, model_value, include_timestamps, include_speakers,
+                  files_snapshot, auto_install_mlx, auto_install_mlx_audio),
             daemon=True,
         )
         self.worker_thread.start()
 
     def _worker_run(self, source, model_value, include_timestamps,
-                    files, auto_install_mlx):
+                    include_speakers, files, auto_install_mlx,
+                    auto_install_mlx_audio):
         log_writer = QueueLogWriter(self.log_queue)
         done = 0
         total = len(files)
@@ -730,7 +754,9 @@ class TranscriptionApp:
                         core.create_local_transcribe_function(
                             model_value, include_timestamps,
                             interactive_prompt=False,
-                            auto_install_mlx=auto_install_mlx)
+                            auto_install_mlx=auto_install_mlx,
+                            include_speakers=include_speakers,
+                            auto_install_mlx_audio=auto_install_mlx_audio)
                 else:
                     transcribe_function = (
                         lambda fp: core.transcribe_audio_openai(

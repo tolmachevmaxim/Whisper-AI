@@ -115,7 +115,13 @@ def _move_outputs(input_file, output_dir):
                 print(f"  Moved: {f} -> {output_dir}/")
 
 
-def transcribe_files(files, model_name="medium", timestamps=False, output_dir=None):
+def transcribe_files(
+    files,
+    model_name="medium",
+    timestamps=False,
+    output_dir=None,
+    persons=False,
+):
     """Transcribe a list of files with queue tracking."""
     ensure_audio_binaries()
 
@@ -136,7 +142,8 @@ def transcribe_files(files, model_name="medium", timestamps=False, output_dir=No
 
     print(f"\nTranscription settings:")
     print(f"  Model: {model_name}")
-    print(f"  Timestamps: {'yes' if timestamps else 'no'}")
+    print(f"  Timestamps: {'yes' if timestamps or persons else 'no'}")
+    print(f"  Persons/speakers: {'yes' if persons else 'no'}")
     print(f"  Output dir: {output_dir or 'same as input'}")
     print(f"  Files: {len(valid_files)}")
     print()
@@ -144,9 +151,11 @@ def transcribe_files(files, model_name="medium", timestamps=False, output_dir=No
     print("Loading model...")
     transcribe_fn = create_local_transcribe_function(
         model_name,
-        timestamps,
+        timestamps or persons,
         interactive_prompt=False,
         auto_install_mlx=True,
+        include_speakers=persons,
+        auto_install_mlx_audio=True,
     )
 
     state = {
@@ -217,6 +226,7 @@ def main():
         epilog="""Examples:
   %(prog)s recording.m4a                     # transcribe single file
   %(prog)s recording.m4a --timestamps        # with timestamps (for video editing)
+  %(prog)s recording.m4a --persons           # speaker monologues (local)
   %(prog)s *.m4a -o ~/transcripts            # batch + custom output dir
   %(prog)s --progress                        # check queue progress
   %(prog)s --add file1.m4a file2.mp3         # add to running queue
@@ -237,6 +247,11 @@ Environment variables:
         "--timestamps", "-t",
         action="store_true",
         help="Include segment + word-level timestamps (off by default)",
+    )
+    parser.add_argument(
+        "--persons", "--speakers", "--diarize",
+        action="store_true",
+        help="Group transcript into anonymous speaker monologues (SPEAKER_00/01). Local macOS backend uses mlx-audio.",
     )
     parser.add_argument(
         "--output-dir", "-o",
@@ -273,6 +288,7 @@ Environment variables:
         model_name=args.model,
         timestamps=args.timestamps,
         output_dir=args.output_dir,
+        persons=args.persons,
     )
 
 

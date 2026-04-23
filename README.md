@@ -3,9 +3,10 @@
 Cross-platform transcription tool with:
 - Local transcription (auto-optimized backend by platform)
 - Optional timestamps (segment + word level)
-- Optional speaker labels (OpenAI diarization model)
+- Optional speaker monologues/person split (`SPEAKER_00`, `SPEAKER_01`, ...)
 - Single-file and watched-folder processing
 - Desktop UI (`tkinter`) for queue-based transcription
+- macOS Finder Quick Actions for right-click transcription
 
 ## What is implemented
 
@@ -18,6 +19,7 @@ Cross-platform transcription tool with:
   - `gpt-4o-transcribe`
   - `gpt-4o-mini-transcribe`
 - Optional timestamps toggle (`y/n`) per run.
+- Optional local "transcribe by persons" mode on macOS. Audio stays local; the app downloads/uses an MLX diarization model.
 - Progress bar is shown in local mode (per file progress via Whisper/MLX internals).
 - Russian supported via multilingual models (`small`, `medium`, `large-v3`).
 
@@ -31,6 +33,7 @@ Python packages:
 - Required: `pydub`, `watchdog`, `tkinterdnd2`
 - Local Whisper fallback/CUDA path: `openai-whisper`, `torch`
 - macOS optimized path: `mlx-whisper` (optional, but recommended)
+- macOS local speaker split: `mlx-audio` (optional)
 - OpenAI API mode: `openai` (optional)
 
 ## Installation
@@ -54,6 +57,9 @@ Optional packages:
 ```bash
 # macOS optimized local backend
 pip install -U mlx-whisper
+
+# macOS local speaker/person split
+pip install -U mlx-audio
 
 # OpenAI API mode
 pip install -U openai
@@ -87,11 +93,28 @@ Then choose:
 
 - Add files / add folder with audio files
 - Drag and drop files or folders into the queue
+- Optional "Transcribe by persons" checkbox for anonymous speaker monologues
 - Queue view with statuses (`Queued`, `Processing`, `Done`, `Error`)
 - Start / Stop-after-current controls
 - Queue progress bar + current file indicator
 - Real-time log panel
 - Open selected file folder
+
+## macOS Finder Quick Actions
+
+Install right-click actions:
+
+```bash
+tools/macos/install_finder_services.zsh
+```
+
+This installs:
+- `Transcribe Audio`
+- `Transcribe Audio by Persons`
+
+They appear in Finder's right-click menu under `Quick Actions` / `Services` for audio and video files. If macOS does not refresh immediately, relaunch Finder.
+
+The person split action runs locally through `skill/scripts/transcribe.py --persons`.
 
 ## Russian language models
 
@@ -112,13 +135,16 @@ Saved only when timestamps are enabled:
 - Word timestamps: `*_words_model-...txt` (if available)
 - Full raw result JSON: `*_full_result_model-...json`
 
-If OpenAI diarization model is used, speaker labels are included in timestamp files.
+If speaker/person split is enabled:
+- Speaker monologues: `*_speakers_model-...txt`
+- Speaker labels are also included in timestamp/word files when available.
 
 ## Environment variables
 
 - `OPENAI_API_KEY` - required for OpenAI API mode
 - `WHISPER_CPU_THREADS` - optional CPU thread override for local CPU mode
 - `MLX_WHISPER_REPO` - optional custom MLX model repo override
+- `MLX_DIARIZATION_MODEL` - optional custom MLX diarization model repo override
 
 ## Notes
 
