@@ -75,6 +75,7 @@ def run_mlx_diarization(
     file_path: str,
     model_repo: str | None = None,
     threshold: float = 0.5,
+    chunk_duration: float | None = None,
 ) -> list[SpeakerTurn]:
     """Run local MLX diarization and return anonymous speaker turns."""
     try:
@@ -89,12 +90,26 @@ def run_mlx_diarization(
         "MLX_DIARIZATION_MODEL",
         DEFAULT_MLX_DIARIZATION_MODEL,
     )
+    if chunk_duration is None:
+        chunk_duration = float(os.getenv("MLX_DIARIZATION_CHUNK_SECONDS", "30"))
+
     wav_path = _export_temp_wav(file_path)
     try:
         print(f"Local speaker diarization: mlx-audio, model: {repo}")
         model = load(repo)
-        result = model.generate(wav_path, threshold=threshold, verbose=True)
-        turns = _extract_turns(result)
+        turns: list[SpeakerTurn] = []
+        if hasattr(model, "generate_stream"):
+            print(f"Speaker diarization mode: streaming chunks, {chunk_duration:g}s each")
+            for result in model.generate_stream(
+                wav_path,
+                chunk_duration=chunk_duration,
+                threshold=threshold,
+                verbose=True,
+            ):
+                turns.extend(_extract_turns(result))
+        else:
+            result = model.generate(wav_path, threshold=threshold, verbose=True)
+            turns = _extract_turns(result)
     finally:
         try:
             os.remove(wav_path)
@@ -103,7 +118,24 @@ def run_mlx_diarization(
 
     if not turns:
         raise RuntimeError("Speaker diarization finished but returned no speaker turns.")
-    return turns
+    return _merge_turns(turns)
+
+
+def _merge_turns(
+    turns: list[SpeakerTurn],
+    max_gap: float = 0.25,
+) -> list[SpeakerTurn]:
+    if not turns:
+        return []
+
+    merged = [turns[0]]
+    for turn in turns[1:]:
+        prev = merged[-1]
+        if turn.speaker == prev.speaker and turn.start <= prev.end + max_gap:
+            prev.end = max(prev.end, turn.end)
+        else:
+            merged.append(turn)
+    return merged
 
 
 def _overlap_seconds(a_start: float, a_end: float, b_start: float, b_end: float) -> float:

@@ -239,10 +239,15 @@ def save_transcription_outputs(file_path, model_name, result, audio_duration, el
 
 def maybe_add_local_speaker_labels(file_path, result, include_speakers):
     if not include_speakers:
-        return result
-    turns = run_mlx_diarization(file_path)
+        return result, False
+    try:
+        turns = run_mlx_diarization(file_path)
+    except Exception as exc:
+        print(f"Speaker diarization failed: {exc}")
+        print("Saving plain transcription without speaker monologues.")
+        return result, False
     print(f"Speaker diarization detected {len(set(turn.speaker for turn in turns))} speaker(s).")
-    return add_speaker_labels(result, turns)
+    return add_speaker_labels(result, turns), True
 
 
 def transcribe_audio_local_whisper(file_path, model, model_name, include_timestamps, backend_label, include_speakers=False):
@@ -256,7 +261,9 @@ def transcribe_audio_local_whisper(file_path, model, model_name, include_timesta
         word_timestamps=include_timestamps or include_speakers,
         verbose=False,
     )
-    result = maybe_add_local_speaker_labels(file_path, result, include_speakers)
+    result, speaker_labels_added = maybe_add_local_speaker_labels(
+        file_path, result, include_speakers
+    )
     elapsed_time = time.time() - start_time
     save_transcription_outputs(
         file_path,
@@ -265,7 +272,7 @@ def transcribe_audio_local_whisper(file_path, model, model_name, include_timesta
         audio_duration,
         elapsed_time,
         backend_label,
-        include_timestamps or include_speakers,
+        include_timestamps or speaker_labels_added,
     )
     print(f"Transcription process completed for {os.path.basename(file_path)}.\n")
 
@@ -314,7 +321,9 @@ def transcribe_audio_local_mlx(file_path, mlx_transcribe, mlx_repo, model_name, 
         )
 
     result = to_plain_dict(result)
-    result = maybe_add_local_speaker_labels(file_path, result, include_speakers)
+    result, speaker_labels_added = maybe_add_local_speaker_labels(
+        file_path, result, include_speakers
+    )
     elapsed_time = time.time() - start_time
     save_transcription_outputs(
         file_path,
@@ -323,7 +332,7 @@ def transcribe_audio_local_mlx(file_path, mlx_transcribe, mlx_repo, model_name, 
         audio_duration,
         elapsed_time,
         "local-mlx-whisper(metal)",
-        include_timestamps or include_speakers,
+        include_timestamps or speaker_labels_added,
     )
     print(f"Transcription process completed for {os.path.basename(file_path)}.\n")
 
