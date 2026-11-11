@@ -401,6 +401,10 @@ def transcribe_audio_local_mlx(
 
 
 def transcribe_audio_openai(file_path, model_name, include_timestamps):
+    if include_timestamps:
+        raise ValueError(
+            "OpenAI gpt-transcribe does not return timestamps; choose Local source for timestamped output."
+        )
     print(f"Starting OpenAI transcription of {os.path.basename(file_path)} with model '{model_name}'.")
     print("OpenAI API mode: detailed per-segment progress is not available from the server.")
     if not os.getenv("OPENAI_API_KEY"):
@@ -560,23 +564,14 @@ def choose_local_model():
 def choose_source():
     print("Choose transcription source:")
     print("1) Local (offline, auto backend: macOS->mlx-whisper, CUDA->Whisper GPU)")
-    print("2) OpenAI API (supports diarization model for speaker split)")
+    print("2) OpenAI API (gpt-transcribe; transcript text only)")
     source_choice = input("Enter the number of your choice: ")
     return source_choice if source_choice in {"1", "2"} else "1"
 
 
 def choose_openai_model():
-    print("Choose an OpenAI transcription model:")
-    print("1) gpt-4o-transcribe-diarize (speaker labels + timestamps)")
-    print("2) gpt-4o-transcribe (no speaker labels)")
-    print("3) gpt-4o-mini-transcribe (faster/cheaper)")
-    model_choice = input("Enter the number of your choice: ")
-    model_mapping = {
-        "1": "gpt-4o-transcribe-diarize",
-        "2": "gpt-4o-transcribe",
-        "3": "gpt-4o-mini-transcribe",
-    }
-    return model_mapping.get(model_choice, "gpt-4o-transcribe-diarize")
+    print("OpenAI transcription model: gpt-transcribe")
+    return "gpt-transcribe"
 
 
 def choose_timestamps_setting():
@@ -816,9 +811,10 @@ def create_local_transcribe_function(
 if __name__ == "__main__":
     # Ask the user what they want to do
     choice = input("Do you want to (1) transcribe a single audio file or (2) set up auto transcription for a folder? (Enter 1 or 2): ")
-    include_timestamps = choose_timestamps_setting()
-
     source_choice = choose_source()
+    include_timestamps = (
+        choose_timestamps_setting() if source_choice == "1" else False
+    )
     include_speakers = False
     if source_choice == "1":
         include_speakers = choose_speaker_setting()
