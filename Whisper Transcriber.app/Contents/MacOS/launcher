@@ -13,7 +13,10 @@ cd "$PROJECT_DIR" || { echo "Failed to cd: $PROJECT_DIR"; exit 1; }
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 echo "PATH: $PATH"
 
-PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
+PYTHON_BIN="$PROJECT_DIR/.venv/bin/python"
+if [ ! -x "$PYTHON_BIN" ]; then
+  PYTHON_BIN="$PROJECT_DIR/venv/bin/python"
+fi
 if [ ! -x "$PYTHON_BIN" ]; then
   PYTHON_BIN="/usr/bin/python3"
 fi
