@@ -28,9 +28,7 @@ LOCAL_MODEL_OPTIONS = [
 ]
 
 OPENAI_MODEL_OPTIONS = [
-    ("gpt-4o-transcribe-diarize", "gpt-4o-transcribe-diarize (speakers + timestamps)"),
-    ("gpt-4o-transcribe", "gpt-4o-transcribe"),
-    ("gpt-4o-mini-transcribe", "gpt-4o-mini-transcribe"),
+    ("gpt-transcribe", "gpt-transcribe"),
 ]
 
 AUDIO_FILETYPES = [
@@ -229,21 +227,23 @@ class TranscriptionApp:
             font=self._f(12),
         ).grid(row=0, column=2, sticky="w", padx=(0, 24))
 
-        ctk.CTkCheckBox(
-            r0, text="Include timestamps",
+        self.timestamps_checkbox = ctk.CTkCheckBox(
+            r0, text="Include timestamps (local only)",
             variable=self.timestamps_var,
             command=self._refresh_sidebar_stats,
             fg_color=ACCENT, border_color=BORDER,
             font=self._f(12),
-        ).grid(row=0, column=3, sticky="w")
+        )
+        self.timestamps_checkbox.grid(row=0, column=3, sticky="w")
 
-        ctk.CTkCheckBox(
-            r0, text="Transcribe by persons",
+        self.speakers_checkbox = ctk.CTkCheckBox(
+            r0, text="Transcribe by persons (local only)",
             variable=self.speakers_var,
             command=self._refresh_sidebar_stats,
             fg_color=ACCENT, border_color=BORDER,
             font=self._f(12),
-        ).grid(row=0, column=4, sticky="w", padx=(18, 0))
+        )
+        self.speakers_checkbox.grid(row=0, column=4, sticky="w", padx=(18, 0))
 
         # Row 1 — Model ────────────────────────────────────────
         r1 = ctk.CTkFrame(ct, fg_color="transparent")
@@ -509,6 +509,9 @@ class TranscriptionApp:
         self.model_display_to_value = {d: v for v, d in options}
         displays = [d for _, d in options]
         self.model_combobox.configure(values=displays)
+        option_state = "normal" if source == "local" else "disabled"
+        self.timestamps_checkbox.configure(state=option_state)
+        self.speakers_checkbox.configure(state=option_state)
         if displays:
             if source == "local":
                 preferred = next(
@@ -533,10 +536,14 @@ class TranscriptionApp:
         self.sidebar_done_var.set(str(done))
         self.sidebar_backend_var.set(
             "Local" if self.source_var.get() == "local" else "OpenAI API")
-        self.sidebar_timestamps_var.set(
-            "On" if self.timestamps_var.get() else "Off")
-        self.sidebar_speakers_var.set(
-            "On" if self.speakers_var.get() else "Off")
+        if self.source_var.get() == "local":
+            self.sidebar_timestamps_var.set(
+                "On" if self.timestamps_var.get() else "Off")
+            self.sidebar_speakers_var.set(
+                "On" if self.speakers_var.get() else "Off")
+        else:
+            self.sidebar_timestamps_var.set("Local only")
+            self.sidebar_speakers_var.set("Local only")
 
     # ── Log polling ────────────────────────────────────────────
 
@@ -720,9 +727,10 @@ class TranscriptionApp:
                 "Audio stays local; the model is downloaded from Hugging Face.",
             )
 
-        include_speakers = bool(self.speakers_var.get())
-        include_timestamps = bool(self.timestamps_var.get()) or include_speakers
         source = self.source_var.get()
+        include_speakers = source == "local" and bool(self.speakers_var.get())
+        include_timestamps = source == "local" and (
+            bool(self.timestamps_var.get()) or include_speakers)
         files_snapshot = list(self.file_paths)
         self.stop_event.clear()
 

@@ -15,10 +15,8 @@ Cross-platform transcription tool with:
   - other systems: `openai-whisper` on best device (`cuda` -> `mps` -> `cpu`)
 - On macOS, if `mlx-whisper` is missing, script asks to install it automatically.
 - OpenAI API mode supports:
-  - `gpt-4o-transcribe-diarize` (speaker split)
-  - `gpt-4o-transcribe`
-  - `gpt-4o-mini-transcribe`
-- Optional timestamps toggle (`y/n`) per run.
+  - `gpt-transcribe` (plain transcript text)
+- Timestamps and speaker splitting are available in local mode only; cloud controls are disabled and the CLI does not offer those options for OpenAI API mode.
 - Optional local "transcribe by persons" mode on macOS. Audio stays local; the app downloads/uses an MLX diarization model.
 - Progress bar is shown in local mode (per file progress via Whisper/MLX internals).
 - Russian supported via multilingual models (`small`, `medium`, `large-v3`).
