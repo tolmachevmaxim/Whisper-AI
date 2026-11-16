@@ -2,14 +2,13 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-PYTHON_BIN="$PROJECT_DIR/venv/bin/python3"
-TRANSCRIBE_SCRIPT="$PROJECT_DIR/skill/scripts/transcribe.py"
+RUNNER_SCRIPT="$PROJECT_DIR/tools/macos/transcribe_from_finder.zsh"
 SERVICES_DIR="$HOME/Library/Services"
 
 mkdir -p "$SERVICES_DIR"
 
-if [[ ! -x "$PYTHON_BIN" ]]; then
-  PYTHON_BIN="/usr/bin/python3"
+if [[ ! -x "$RUNNER_SCRIPT" ]]; then
+  chmod +x "$RUNNER_SCRIPT"
 fi
 
 write_info_plist() {
@@ -58,9 +57,8 @@ write_workflow() {
   local workflow_dir="$1"
   local title="$2"
   local extra_args="$3"
-  local escaped_python="${PYTHON_BIN//&/&amp;}"
-  local escaped_script="${TRANSCRIBE_SCRIPT//&/&amp;}"
-  local command="'$escaped_python' '$escaped_script' $extra_args "'$ARGS'
+  local escaped_runner="${RUNNER_SCRIPT//&/&amp;}"
+  local command="'$escaped_runner' $extra_args "'$ARGS'
 
   cat > "$workflow_dir/Contents/document.wflow" <<WFLOW
 <?xml version="1.0" encoding="UTF-8"?>

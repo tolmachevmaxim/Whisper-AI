@@ -37,7 +37,7 @@ Python packages:
 ## Installation
 
 ```bash
-git clone https://github.com/tolmme/Whisper-AI.git
+git clone https://github.com/tolmachevmaxim/Whisper-AI.git
 cd Whisper-AI
 python3 -m venv venv
 source venv/bin/activate
@@ -111,6 +111,8 @@ This installs:
 - `Transcribe Audio by Persons`
 
 They appear in Finder's right-click menu under `Quick Actions` / `Services` for audio and video files. If macOS does not refresh immediately, relaunch Finder.
+
+The actions use `tools/macos/transcribe_from_finder.zsh`, which prefers `.venv/bin/python3` and falls back to `venv/bin/python3`. Set `WHISPER_PYTHON_BIN` to an executable Python path to override this selection. Install the dependencies above into that environment first. If you move the checkout, rerun the Finder installer.
 
 The person split action runs locally through `skill/scripts/transcribe.py --persons`.
 By default it saves only one file: `*_speakers_model-...txt`.
